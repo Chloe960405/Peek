@@ -346,7 +346,11 @@ enum UsageFetcher {
     }
 
     static func fetchClaude() async throws -> ProviderUsage {
-        let credentials = try ClaudeCredentials.loadFromKeychain()
+        let credentials = try await CredentialStore.shared.loadClaudeCredentials()
+        return try await Self.fetchClaude(using: credentials, allowsCredentialReload: true)
+    }
+
+    private static func fetchClaude(using credentials: ClaudeCredentials, allowsCredentialReload: Bool) async throws -> ProviderUsage {
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
         request.httpMethod = "GET"
         request.timeoutInterval = 25
@@ -359,6 +363,14 @@ enum UsageFetcher {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw FetchError.invalidResponse
+        }
+        if allowsCredentialReload, http.statusCode == 401 || http.statusCode == 403 {
+            await CredentialStore.shared.clearClaudeCredentials()
+            let credentials = try await CredentialStore.shared.loadClaudeCredentials()
+            return try await Self.fetchClaude(using: credentials, allowsCredentialReload: false)
+        }
+        if http.statusCode == 401 || http.statusCode == 403 {
+            throw FetchError.authenticationExpired("Claude Code 未登录或登录已过期，请运行 claude auth login")
         }
         guard (200..<300).contains(http.statusCode) else {
             throw FetchError.httpStatus(http.statusCode)
@@ -376,9 +388,29 @@ enum UsageFetcher {
     }
 }
 
+actor CredentialStore {
+    static let shared = CredentialStore()
+
+    private var claudeCredentials: ClaudeCredentials?
+
+    func loadClaudeCredentials() throws -> ClaudeCredentials {
+        if let claudeCredentials {
+            return claudeCredentials
+        }
+        let credentials = try ClaudeCredentials.loadFromKeychain()
+        self.claudeCredentials = credentials
+        return credentials
+    }
+
+    func clearClaudeCredentials() {
+        self.claudeCredentials = nil
+    }
+}
+
 enum FetchError: LocalizedError {
     case missingCredentials(String)
     case invalidCredentials(String)
+    case authenticationExpired(String)
     case invalidResponse
     case httpStatus(Int)
 
@@ -387,6 +419,8 @@ enum FetchError: LocalizedError {
         case let .missingCredentials(message):
             message
         case let .invalidCredentials(message):
+            message
+        case let .authenticationExpired(message):
             message
         case .invalidResponse:
             "响应格式无效"

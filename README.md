@@ -54,9 +54,28 @@ On Intel Macs, it may be:
 .build/x86_64-apple-macosx/release/Peek
 ```
 
+To build a `.app` bundle:
+
+```bash
+Scripts/build-app.sh
+```
+
+For stable macOS Keychain "Always Allow" behavior with Claude Code credentials, sign the app with a stable local Apple Development or Developer ID certificate:
+
+```bash
+CODE_SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" Scripts/build-app.sh
+```
+
+The app bundle is written to:
+
+```bash
+.build/Peek.app
+```
+
 ## Notes
 
 - Peek uses the current user's local Codex and Claude Code credentials.
+- Claude Code stores subscription OAuth credentials in macOS Keychain. To make "Always Allow" stick across restarts, run Peek from a stable signed `.app` bundle instead of a freshly rebuilt ad-hoc executable.
 - If usage looks stale, quit and reopen Peek, then refresh.
 - If Claude Code was reinstalled recently, make sure `claude` works in Terminal first:
 
